@@ -132,7 +132,7 @@ class PolicyIteration:
 
 def test_value_iteration():
     P,R,state_table,action_table,env = GetModel()
-    state = env.reset() 
+    state = env.reset((0,0)) 
     # env.render()
     boe = ValueIteration(env,25,5,P,R,state_table)
     pi_star,v_star=  boe.iteration()
@@ -162,5 +162,5 @@ def test_policy_iteration():
     env.show_policy(pi_star)
     env.show_value(state_maxtirx)
 if __name__ == "__main__":  
-    # test_value_iteration()
-    test_policy_iteration()
+    test_value_iteration()
+    # test_policy_iteration()

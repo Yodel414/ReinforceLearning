@@ -32,7 +32,7 @@ def test_config2():
     reward_target = 1
     reward_forbidden = -10
     reward_step = 0
-    reward_boundary = -1
+    reward_boundary = -10
     parser = argparse.ArgumentParser("Grid World Environment")
     parser.add_argument("--env-size", type=Union[list, tuple, np.ndarray], default=env_size )   
     parser.add_argument("--start-state", type=Union[list, tuple, np.ndarray], default=start_state)
@@ -51,4 +51,6 @@ def GetConfig(type):
     if type == 1:
         return test_config1()
     if type == 2:
+        return test_config2()
+    if type == 3:
         return test_config2()

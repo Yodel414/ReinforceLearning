@@ -27,25 +27,28 @@ def GetModel():
 def GetMonteCarolModel(type):
     config = GetConfig(type)
     env = GridWorld(config)
-    P = {}
-    R = {}
-    # state_table = {}
-    # action_table = {}
-    state_index = 0
-    for state in env.state_space:
-        # state_table[state] = state_index
-        action_index = 0
-        for action in env.action_space:
-            # action_table[action] = action_index
-            for _ in env.state_space:
-                P[(state_index,action_index)] = 0
-                R[(state_index,action_index)] = 0
-            next_state , reward = env._get_next_state_and_reward(state,action)
-            P[(state_index,action_index)] = next_state
-            R[(state_index,action_index)] = reward
-            action_index += 1
-        state_index += 1
-    return P,R,env
+    if type == 3: 
+        return env
+    else:
+        P = {}
+        R = {}
+        # state_table = {}
+        # action_table = {}
+        state_index = 0
+        for state in env.state_space:
+            # state_table[state] = state_index
+            action_index = 0
+            for action in env.action_space:
+                # action_table[action] = action_index
+                for _ in env.state_space:
+                    P[(state_index,action_index)] = 0
+                    R[(state_index,action_index)] = 0
+                next_state , reward = env._get_next_state_and_reward(state,action)
+                P[(state_index,action_index)] = next_state
+                R[(state_index,action_index)] = reward
+                action_index += 1
+            state_index += 1
+        return P,R,env
 if __name__ == "__main__":
     # P,R,state_table,action_table,env = GetModel()/
     P,R,env = GetMonteCarolModel(1)

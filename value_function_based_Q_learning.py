@@ -2,10 +2,9 @@ import numpy as np
 import random
 from model_def import GetMonteCarolModel
 from src.grid_world import GridWorld
-from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 
-class VFASARSA:
+class VFAQLearning:
     def __init__(self,env:GridWorld,gamma):
         self.env = env
         self.gamma = gamma
@@ -70,33 +69,33 @@ class VFASARSA:
         self.policy = elementwise
 
     def iteration(self,k):
-        alpha_k = 0.001 
+        alpha_k = 0.01 
         state = self.env.start_state
         self.env.reset(state)
         old_w = self.w.copy()
-        action = self.eposilon_greedy(self.postion2num(state))
-        if k == 499:
-            print(1)
         done = False
         tmp_reward = 0
         traj_length = 0
         while not done:
             traj_length += 1
+            action = self.eposilon_greedy(self.postion2num(state))
             next_state, reward, done, info = self.env.step(self.env.action_space[action])
 
             q_s = self.FeatureVectors(self.postion2num(state),action)
             q_list = []
-            for tmp_action in self.env.action_space:
+            for tmp_action in range(self.action_num):
                 q_s_1 = self.FeatureVectors(self.postion2num(next_state),tmp_action)
-                q_list.append( q_s_1.transpose() @ self.w )
-            q_star = np.argmax(q_list)
-            td_error = reward + self.gamma * q_list[q_star] - q_s.transpose() @ self.w
+                q_list.append( (q_s_1.transpose() @ self.w).item() )
+            q_star = max(q_list)
+            td_error = (reward + self.gamma * q_star - q_s.transpose() @ self.w)[0][0]
             self.w = self.w + alpha_k * td_error * q_s
 
             tmp_reward += reward
             self.update_policy(self.postion2num(state))
             state = next_state
-            
+            if state == self.env.target_state:
+                done = True
+        self.update_policy(self.postion2num(state))
         # print(np.linalg.norm(self.w - old_w))  
         return tmp_reward,traj_length
     def postion2num(self,state):
@@ -109,20 +108,25 @@ class VFASARSA:
 def test1():
     env = GetMonteCarolModel(3)
     gamma = 0.9
-    vfa_sarsa = VFASARSA(env,gamma)
-    N = 1
+    vfa_q_learning = VFAQLearning(env,gamma)
+    N = 10000
     initial_policy = [4,3,3,2,4,4,2,0,0,2,0,4,2,0,2,0,1,4,3,2,4,3,0,3,4]
-    vfa_sarsa.GeneratePolicy(initial_policy)
+    vfa_q_learning.GeneratePolicy(initial_policy)
     reward_list = []
     trajlength_list = []
     for index in range(N):
-        tmp_reward,tmp_length = vfa_sarsa.iteration(index)
+        tmp_reward,tmp_length = vfa_q_learning.iteration(index)
         reward_list.append(tmp_reward)
         trajlength_list.append(tmp_length)
+    # for state_idx in range(vfa_q_learning.env.num_states):
+    #     vfa_q_learning.update_policy(state_idx)
+    plt.subplot(2,1,1)
     plt.plot(range(N),reward_list)
+    plt.subplot(2,1,2)
+    plt.plot(range(N),trajlength_list)
     plt.show()
-    vfa_sarsa.GeneratePolicy(vfa_sarsa.policy)
-    vfa_sarsa.env.show_policy(vfa_sarsa.policy_matrix)
+    vfa_q_learning.GeneratePolicy(vfa_q_learning.policy)
+    vfa_q_learning.env.show_policy(vfa_q_learning.policy_matrix)
 
 if __name__ == '__main__':
 

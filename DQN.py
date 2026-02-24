@@ -1,12 +1,13 @@
-# import torch
+import torch
 import torch.nn as nn
 import torch.optim as optim
 from matplotlib import pyplot as plt
+from sklearn.metrics import mean_squared_error
 from model_def import GetMonteCarolModel
 from src.grid_world import GridWorld
 import random
 import numpy as np
-
+from collections import deque
 class QNetwork(nn.Module):
     def __init__(self, state_dim, action_num):
         super(QNetwork, self).__init__()
@@ -30,74 +31,142 @@ class DQN:
         # 两个网络：主网络和目标网络
         self.policy_net = QNetwork(self.state_dim, self.action_num)
         self.target_net = QNetwork(self.state_dim, self.action_num)
-        self.epoch = 100
-        self.eposilon = 0.3
+        self.epsilon = 0.1
+        self.epsilon_min = 0.05
+        self.epsilon_decay = 0.995
+        self.batch_size = 100
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_update_freq = 10 # 每10个episode同步一次网络
-        self.cache_beta = []
-        self.cache_size = 10000
+        self.memory = deque(maxlen=1000) 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-3)
-    def eposilon_greedy(self,state):
-        num = random.random()
-        if num <= 1 - self.eposilon/(self.action_num) * (self.action_num - 1):
-            return self.env.action_space[self.policy[self.postion2num(state)]]
+    def epsilon_greedy(self,state_tensor):
+        if random.random() < self.epsilon:
+            with torch.no_grad():
+                q = self.policy_net(state_tensor)
+                return torch.argmax(q).item()
         else:
-            return self.env.action_space[random.randint(0,4)]
-    def GeneratePolicy(self,action_list):
+            return random.randint(0,4)
+    def GeneratePolicy(self):
         policy_matrix=np.zeros((self.num_states,self.action_num))
         for index in range(self.num_states):
-            policy_matrix[index][action_list[index]] = 1
+            with torch.no_grad():
+                tensor_state = self.get_tensor_state(index)
+                action = np.argmax(self.target_net(tensor_state)).item()
+                policy_matrix[index][action] = 1
         self.policy_matrix = policy_matrix
-        elementwise = []
-        for index in range(len(policy_matrix)):
-            for j in range(len(self.env.action_space)):
-                if policy_matrix[index][j] == 1:
-                    elementwise.append(j)
-        self.policy = elementwise
-    def cache_generate(self):
-        state = self.env.start_state
-        self.env.reset(state)
-        for i in range(self.cache_size):
-            acion_based_pi_b = self.eposilon_greedy(state)
-            next_state, reward, done, info = self.env.step(acion_based_pi_b)
-            self.cache_beta.append((self.postion2num(state),self.env.action_space.index(acion_based_pi_b),reward,self.postion2num(next_state)))
-    def learn(self,iteration_times):
-        for i in range(iteration_times):
-            selected = random.choices(self.cache_beta, k = self.epoch)
-            # yt = np.zeros((len(selected),1))
-            for sample in selected:
-                s = sample[0]
-                a = sample[1]
-                r = sample[2]
-                s_prime = sample[3]
-                q_list = []
-                for acion in self.env.action_space:
-                    q_value = self.target_net.forward(s_prime,a)
-                    q_list.append(q_value)
-                yt = r + self.gamma * max(q_list)
-    def postion2num(self,state):
+
+    def get_tensor_state(self,state):
         if isinstance(state,tuple):
-            return state[1] * self.env.env_size[0] + state[0]
+            x = state[0]
+            y = state[1]
         elif isinstance(state,int):
-            return(state % self.env.env_size[0],state // self.env.env_size[0])
+            x = state % self.env.env_size[0]
+            y = state // self.env.env_size[0]          
+        return torch.FloatTensor([x/4.0, y/4.0])
+
+    def learn(self):
+        if len(self.memory) < self.batch_size:
+            return 0.0,0.0,0.0
+        batch = random.sample(self.memory, self.batch_size)
+        states, actions, rewards, next_states = zip(*batch)
+        states = torch.stack(states)
+        actions = torch.LongTensor(actions).view(-1, 1)
+        rewards = torch.FloatTensor(rewards)
+        next_states = torch.stack(next_states)
+        current_q = self.policy_net(states).gather(1,actions)
+        with torch.no_grad():  #利用目标网络计算target_Q
+            next_q = self.target_net(next_states).max(1)[0]
+            target_q = rewards + self.gamma * next_q
+        loss = nn.MSELoss()(current_q.squeeze(),target_q)
+        self.optimizer.zero_grad()
+        loss.backward()
+        total_norm = 0.0
+        for p in self.policy_net.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        grad_norm = total_norm ** 0.5
+        self.optimizer.step()
+        rmse = np.sqrt(mean_squared_error(current_q.detach().cpu().numpy().squeeze(), 
+                                          target_q.detach().cpu().numpy()))
+        return loss.item(),grad_norm,rmse
+    def train(self,iteration_times):
+        reward_history = []
+        loss_history = []
+        grad_norm_history = []
+        rmse_list = []
+        for i in range(iteration_times):
+            done = False
+            episode = 0
+            total_reward = 0
+            state = self.env.start_state
+            self.env.reset(state)
+            while not done and episode < 1000:
+                tensor_state = self.get_tensor_state(state)
+                acion_based_pi_b = self.epsilon_greedy(tensor_state)
+                next_state, reward, done, info = self.env.step(self.env.action_space[acion_based_pi_b])
+                tensor_state_prime = self.get_tensor_state(next_state)
+                self.memory.append((tensor_state,acion_based_pi_b,reward,tensor_state_prime))
+                state = next_state
+                loss, grad_norm,rmse = self.learn()
+                if loss is not None:          # 仅当更新时才记录
+                    loss_history.append(loss)
+                    grad_norm_history.append(grad_norm)
+                    rmse_list.append(rmse)
+                episode += 1
+                total_reward += reward
+            self.epsilon = max(self.epsilon_min,self.epsilon * self.epsilon_decay)
+            if i % self.target_update_freq == 0:
+                self.target_net.load_state_dict(self.policy_net.state_dict())
+            reward_history.append(total_reward)
+            if (i+1) % 100 == 0:
+                avg_reward = np.mean(reward_history[-100:])
+                print(f"Episode {i+1}, Avg Reward: {avg_reward:.2f}, Epsilon: {self.epsilon:.3f}")
+        return reward_history,loss_history,grad_norm_history,rmse_list
+    
+def plot_training(reward_hist, loss_hist, grad_norm_hist,rmse_hist):
+        """绘制训练曲线"""
+        plt.figure(figsize=(12, 8))
+
+        plt.subplot(4, 1, 1)
+        plt.plot(reward_hist, color='blue')
+        plt.xlabel('Episode')
+        plt.ylabel('Total Reward')
+        plt.title('Reward per Episode')
+        plt.grid(True)
+
+        plt.subplot(4, 1, 2)
+        plt.plot(loss_hist, color='red', alpha=0.7)
+        plt.xlabel('Training Step')
+        plt.ylabel('Loss')
+        plt.title('Loss over Time')
+        plt.grid(True)
+
+        plt.subplot(4, 1, 3)
+        plt.plot(grad_norm_hist, color='green', alpha=0.7)
+        plt.xlabel('Training Step')
+        plt.ylabel('Gradient Norm')
+        plt.title('Gradient Norm over Time')
+        plt.grid(True)
+
+        plt.subplot(4, 1, 4)
+        plt.plot(rmse_hist, color='green', alpha=0.7)
+        plt.xlabel('Training Step')
+        plt.ylabel('RMSE')
+        plt.title('RMSE over Time')
+        plt.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
 
 def test1():
     env = GetMonteCarolModel(3)
     gamma = 0.9
     dqn = DQN(env,gamma)
-    N = 10000
-    initial_policy = [4,3,3,2,4,4,2,0,0,2,0,4,2,0,2,0,1,4,3,2,4,3,0,3,4]
-    dqn.GeneratePolicy(initial_policy)
     iteration_times = 1000
-    dqn.cache_generate()
-    dqn.learn(iteration_times)
-
-    # for state_idx in range(dqn.env.num_states):
-    #     dqn.update_policy(state_idx)
-
-    dqn.GeneratePolicy(dqn.policy)
+    reward_hist, loss_hist, grad_hist,rmse_hist = dqn.train(iteration_times)
+    dqn.GeneratePolicy()
     dqn.env.show_policy(dqn.policy_matrix)
-
+    plot_training(reward_hist, loss_hist, grad_hist,rmse_hist)
 if __name__ == '__main__':
-
     test1()  

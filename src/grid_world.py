@@ -195,7 +195,8 @@ class GridWorld():
         
         
         
-        plt.show()  
+        plt.savefig('value_result.png')  
+        print("Saved value result to value_result.png")
     def show_policy(self,policy_matrix):
         self.canvas, self.ax = plt.subplots()   
         self.ax.set_xlim(-0.5, self.env_size[0] - 0.5)
@@ -238,8 +239,8 @@ class GridWorld():
                         self.ax.add_patch(patches.FancyArrow(x, y, dx=(0.1+action_probability/2)*dx, dy=(0.1+action_probability/2)*dy, color=self.color_policy, width=0.001, head_width=0.05))
                     else:
                         self.ax.add_patch(patches.Circle((x, y), radius=0.07, facecolor=self.color_policy, edgecolor=self.color_policy, linewidth=1, fill=False))
-        plt.show()
-        # plt.pause(animation_interval)
+        plt.savefig('policy_result.png')
+        print("Saved policy result to policy_result.png")
 
 
         

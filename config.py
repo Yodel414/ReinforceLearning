@@ -29,9 +29,9 @@ def test_config2():
     start_state=(0,0) 
     target_state=(2,3)
     forbidden_states=[ (1, 1), (2, 1), (2, 2),(1, 3),(3, 3),(1, 4)]
-    reward_target = 1
+    reward_target = 10
     reward_forbidden = -10
-    reward_step = 0
+    reward_step = -1  # 每步惩罚，促使尽快到达目标
     reward_boundary = -10
     parser = argparse.ArgumentParser("Grid World Environment")
     parser.add_argument("--env-size", type=Union[list, tuple, np.ndarray], default=env_size )   
